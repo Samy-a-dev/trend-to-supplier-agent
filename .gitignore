@@ -1,0 +1,45 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+*.log
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env — never commit real secrets; keep only the *.example templates
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# python sidecar
+/.venv
+venv/
+__pycache__/
+*.pyc
+
+# generated assets
+/data/images/*
+!/data/images/.gitkeep
+
+# typescript
+*.tsbuildinfo
+
+# generated concept images
+/public/generated/*
+!/public/generated/.gitkeep
