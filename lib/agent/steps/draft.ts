@@ -4,6 +4,7 @@ import type { Event, InvocationContext } from "@google/adk";
 import { PipelineStep } from "../base-step";
 import { generateJSON, MODELS } from "../../adapters/gemini";
 import { recordOutreach } from "../../db/store";
+import { toolEvent } from "../../log";
 import { STATE, type OutreachEmail, type Opportunity, type Supplier, type VariantConcept } from "../../types";
 
 const EmailsSchema = z.object({
@@ -74,7 +75,20 @@ export class DraftStep extends PipelineStep {
       };
     });
 
-    if (emails.length > 0) await recordOutreach(runId, emails);
+    if (emails.length > 0) {
+      await recordOutreach(runId, emails);
+      yield this.event(
+        ctx,
+        `ClickHouse ← ${emails.length} row(s) → outreach_emails (status=draft)`,
+        "progress",
+        undefined,
+        toolEvent("clickhouse", "INSERT → outreach_emails", {
+          table: "outreach_emails",
+          rows: emails.length,
+          status: "draft",
+        }),
+      );
+    }
 
     yield this.event(ctx, `Drafted ${emails.length} RFQ email(s)`, "step_done", {
       [STATE.emails]: emails,

@@ -34,6 +34,7 @@ export function recordTrendObservations(
       topic: it.topic ?? "",
       payload: JSON.stringify(it.payload ?? {}),
     })),
+    { waitForAsyncInsert: false },
   );
 }
 
@@ -63,6 +64,7 @@ export function recordMarketplaceListings(
       review_count: r.reviewCount ?? 0,
       payload: JSON.stringify(r.payload ?? {}),
     })),
+    { waitForAsyncInsert: false },
   );
 }
 
@@ -78,6 +80,7 @@ export function recordReviewInsights(runId: string, insights: ReviewInsight[]) {
       frequency: i.frequency,
       payload: "{}",
     })),
+    { waitForAsyncInsert: false },
   );
 }
 
@@ -92,6 +95,7 @@ export function recordPainPoints(runId: string, pains: PainPoint[]) {
       evidence_count: p.evidenceCount,
       payload: "{}",
     })),
+    { waitForAsyncInsert: false },
   );
 }
 
@@ -106,6 +110,7 @@ export function recordCompetitors(runId: string, competitors: Competitor[]) {
       url: c.url ?? "",
       payload: "{}",
     })),
+    { waitForAsyncInsert: false },
   );
 }
 

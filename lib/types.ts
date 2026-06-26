@@ -97,6 +97,7 @@ export const STATE = {
   vertical: "vertical",
   region: "region",
   runId: "runId",
+  freshScrape: "freshScrape",
   discoveryPlan: "discoveryPlan",
   rawSignals: "rawSignals",
   opportunity: "opportunity",

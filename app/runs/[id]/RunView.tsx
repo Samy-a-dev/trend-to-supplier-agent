@@ -12,7 +12,8 @@ import type {
 } from "@/lib/types";
 
 type StepState = "pending" | "running" | "done" | "error";
-type LogLine = { step: string; kind: string; message: string };
+type ToolDetail = { name: string; msg?: string; [k: string]: unknown };
+type LogLine = { step: string; kind: string; message: string; detail?: ToolDetail };
 type EventMsg = {
   step?: string;
   kind?: string;
@@ -64,7 +65,13 @@ export default function RunView({
       });
     }
     if (ev.message) {
-      setLog((prev) => [...prev, { step: ev.step ?? "", kind: ev.kind ?? "", message: ev.message! }]);
+      const rawTool = ev.data && typeof ev.data === "object" ? ev.data.tool : undefined;
+      const detail =
+        rawTool && typeof rawTool === "object" ? (rawTool as ToolDetail) : undefined;
+      setLog((prev) => [
+        ...prev,
+        { step: ev.step ?? "", kind: ev.kind ?? "", message: ev.message!, detail },
+      ]);
     }
     const d = ev.data;
     if (d && typeof d === "object") {
@@ -334,19 +341,21 @@ export default function RunView({
             <div className="max-h-[70vh] space-y-1 overflow-y-auto font-mono text-[11px]">
               {log.length === 0 && <p className="text-neutral-600">Waiting…</p>}
               {log.map((l, i) => (
-                <div
-                  key={i}
-                  className={
-                    l.kind === "step_error"
-                      ? "text-red-400"
-                      : l.kind === "warning"
-                        ? "text-amber-400"
-                        : l.kind === "step_done"
-                          ? "text-emerald-400"
-                          : "text-neutral-400"
-                  }
-                >
-                  <span className="text-neutral-600">{l.step}</span> {l.message}
+                <div key={i}>
+                  <div
+                    className={
+                      l.kind === "step_error"
+                        ? "text-red-400"
+                        : l.kind === "warning"
+                          ? "text-amber-400"
+                          : l.kind === "step_done"
+                            ? "text-emerald-400"
+                            : "text-neutral-400"
+                    }
+                  >
+                    <span className="text-neutral-600">{l.step}</span> {l.message}
+                  </div>
+                  {l.detail && <ToolDetailView detail={l.detail} />}
                 </div>
               ))}
             </div>
@@ -363,5 +372,70 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
       <h3 className="mb-3 text-sm font-medium text-neutral-300">{title}</h3>
       {children}
     </section>
+  );
+}
+
+// Per-sponsor badge colors so tool usage is visually distinct in the activity stream.
+const TOOL_BADGE: Record<string, string> = {
+  tavily: "border-sky-500/50 bg-sky-950/40 text-sky-300",
+  clickhouse: "border-yellow-500/50 bg-yellow-950/40 text-yellow-300",
+  prometheux: "border-fuchsia-500/50 bg-fuchsia-950/40 text-fuchsia-300",
+  apify: "border-emerald-500/50 bg-emerald-950/40 text-emerald-300",
+  gemini: "border-teal-500/50 bg-teal-950/40 text-teal-300",
+  gmail: "border-rose-500/50 bg-rose-950/40 text-rose-300",
+};
+
+/** Fields rendered as their own block rather than inline `key=value` chips. */
+const BLOCK_FIELDS = new Set(["program", "answer", "queries"]);
+
+/**
+ * Renders the structured detail of a sponsor tool call beneath its activity line:
+ * a colored badge (Tavily / ClickHouse / Prometheux / …), the scalar params as chips,
+ * and any large fields (the Vadalog program, Tavily answer, query list) as blocks.
+ */
+function ToolDetailView({ detail }: { detail: ToolDetail }) {
+  const { name, msg, ...rest } = detail;
+  const badge = TOOL_BADGE[name] ?? "border-neutral-700 bg-neutral-800/60 text-neutral-300";
+
+  const chips = Object.entries(rest).filter(
+    ([k, v]) => !BLOCK_FIELDS.has(k) && v !== undefined && v !== null && !Array.isArray(v),
+  );
+  const lists = Object.entries(rest).filter(([k, v]) => k !== "program" && Array.isArray(v));
+  const program = typeof rest.program === "string" ? rest.program : undefined;
+  const answer = typeof rest.answer === "string" ? rest.answer : undefined;
+
+  return (
+    <div className="mb-1 ml-3 mt-0.5 border-l border-neutral-800 pl-2">
+      <div className="flex flex-wrap items-center gap-1">
+        <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${badge}`}>
+          {name}
+        </span>
+        {msg && <span className="text-[10px] text-neutral-500">{msg}</span>}
+        {chips.map(([k, v]) => (
+          <span key={k} className="rounded bg-neutral-800/70 px-1.5 py-0.5 text-[10px] text-neutral-400">
+            {k}=<span className="text-neutral-300">{String(v)}</span>
+          </span>
+        ))}
+      </div>
+      {lists.map(([k, v]) => (
+        <ul key={k} className="mt-1 space-y-0.5">
+          {(v as unknown[]).map((item, i) => (
+            <li key={i} className="text-[10px] text-neutral-500">
+              <span className="text-neutral-700">{k}:</span> {String(item)}
+            </li>
+          ))}
+        </ul>
+      ))}
+      {answer && (
+        <p className="mt-1 border-l-2 border-sky-800/60 pl-2 text-[10px] italic text-neutral-400">
+          {answer}
+        </p>
+      )}
+      {program && (
+        <pre className="mt-1 max-h-48 overflow-auto rounded bg-neutral-950/60 p-2 text-[10px] leading-snug text-fuchsia-200/80">
+          {program}
+        </pre>
+      )}
+    </div>
   );
 }

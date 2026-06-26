@@ -2,6 +2,7 @@ import type { Event, InvocationContext } from "@google/adk";
 import { PipelineStep } from "../base-step";
 import { scrapeTikTok, scrapeAmazonProducts, scrapeReddit } from "../../adapters/apify";
 import { recordTrendObservations, recordMarketplaceListings } from "../../db/store";
+import { toolEvent } from "../../log";
 import { STATE, type DiscoveryPlan, type RawSignals } from "../../types";
 
 const num = (v: unknown): number => {
@@ -38,7 +39,13 @@ export class IngestStep extends PipelineStep {
 
     if (tiktok.status === "fulfilled") {
       signals.tiktok = tiktok.value;
-      yield this.event(ctx, `TikTok: ${tiktok.value.length} posts`, "progress");
+      yield this.event(
+        ctx,
+        `Apify ← TikTok: ${tiktok.value.length} posts`,
+        "progress",
+        undefined,
+        toolEvent("apify", "scrape:tiktok", { posts: tiktok.value.length }),
+      );
       await recordTrendObservations(
         runId,
         "tiktok",
@@ -48,13 +55,30 @@ export class IngestStep extends PipelineStep {
           payload: it,
         })),
       );
+      yield this.event(
+        ctx,
+        `ClickHouse ← ${tiktok.value.length} row(s) → trend_observations`,
+        "progress",
+        undefined,
+        toolEvent("clickhouse", "INSERT → trend_observations", {
+          table: "trend_observations",
+          rows: tiktok.value.length,
+          source: "tiktok",
+        }),
+      );
     } else {
       yield this.event(ctx, `TikTok scrape failed: ${String(tiktok.reason)}`, "warning");
     }
 
     if (amazon.status === "fulfilled") {
       signals.amazonProducts = amazon.value;
-      yield this.event(ctx, `Amazon: ${amazon.value.length} products`, "progress");
+      yield this.event(
+        ctx,
+        `Apify ← Amazon: ${amazon.value.length} products`,
+        "progress",
+        undefined,
+        toolEvent("apify", "scrape:amazon", { products: amazon.value.length }),
+      );
       await recordMarketplaceListings(
         runId,
         "amazon",
@@ -68,13 +92,30 @@ export class IngestStep extends PipelineStep {
           payload: it,
         })),
       );
+      yield this.event(
+        ctx,
+        `ClickHouse ← ${amazon.value.length} row(s) → marketplace_listings`,
+        "progress",
+        undefined,
+        toolEvent("clickhouse", "INSERT → marketplace_listings", {
+          table: "marketplace_listings",
+          rows: amazon.value.length,
+          source: "amazon",
+        }),
+      );
     } else {
       yield this.event(ctx, `Amazon scrape failed: ${String(amazon.reason)}`, "warning");
     }
 
     if (reddit.status === "fulfilled") {
       signals.reddit = reddit.value;
-      yield this.event(ctx, `Reddit: ${reddit.value.length} items`, "progress");
+      yield this.event(
+        ctx,
+        `Apify ← Reddit: ${reddit.value.length} items`,
+        "progress",
+        undefined,
+        toolEvent("apify", "scrape:reddit", { items: reddit.value.length }),
+      );
       await recordTrendObservations(
         runId,
         "reddit",
@@ -83,6 +124,17 @@ export class IngestStep extends PipelineStep {
           topic: str(it.title ?? it.body),
           payload: it,
         })),
+      );
+      yield this.event(
+        ctx,
+        `ClickHouse ← ${reddit.value.length} row(s) → trend_observations`,
+        "progress",
+        undefined,
+        toolEvent("clickhouse", "INSERT → trend_observations", {
+          table: "trend_observations",
+          rows: reddit.value.length,
+          source: "reddit",
+        }),
       );
     } else {
       yield this.event(ctx, `Reddit scrape failed: ${String(reddit.reason)}`, "warning");

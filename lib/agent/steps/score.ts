@@ -4,6 +4,7 @@ import { PipelineStep } from "../base-step";
 import { generateJSON, MODELS } from "../../adapters/gemini";
 import { derive } from "../../adapters/prometheux";
 import { buildScoringProgram, isStockCandidate } from "../../reasoning/vadalog";
+import { toolEvent } from "../../log";
 import { STATE, type Evidence, type Opportunity, type RawSignals, type Scores, type Supplier } from "../../types";
 
 const ScoreSchema = z.object({
@@ -48,7 +49,7 @@ export class ScoreStep extends PipelineStep {
     // 1) Symbolic reasoning via Prometheux (the real engine).
     let stockCandidate = false;
     let derived: unknown = null;
-    const { program, output } = buildScoringProgram({
+    const { program, output, factLines, ruleLines } = buildScoringProgram({
       product: opp.product,
       growth,
       platformCount,
@@ -56,11 +57,36 @@ export class ScoreStep extends PipelineStep {
       competitors: opp.competitors,
       suppliers,
     });
+
+    yield this.event(
+      ctx,
+      `Prometheux · evaluating Vadalog program — ${factLines.length} facts, ${ruleLines.length} rules → @output(${output})`,
+      "progress",
+      undefined,
+      toolEvent("prometheux", "derive:stockCandidate", {
+        engine: "Vadalog",
+        output,
+        facts: factLines.length,
+        rules: ruleLines.length,
+        program,
+      }),
+    );
+
     try {
       const res = await derive({ program, output_predicate: output });
       derived = res.results;
       stockCandidate = isStockCandidate(res.results, opp.product);
-      yield this.event(ctx, `Prometheux: stockCandidate=${stockCandidate}`, "progress");
+      yield this.event(
+        ctx,
+        `Prometheux ⊢ stockCandidate(${opp.product}) = ${stockCandidate}`,
+        "progress",
+        undefined,
+        toolEvent("prometheux", "result", {
+          output,
+          stockCandidate,
+          project_id: res.project_id,
+        }),
+      );
     } catch (e) {
       yield this.event(ctx, `Prometheux unavailable, scoring without it: ${String(e)}`, "warning");
     }

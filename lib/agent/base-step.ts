@@ -16,12 +16,20 @@ export abstract class PipelineStep extends BaseAgent {
     super({ name, description });
   }
 
-  /** Build an ADK Event carrying a progress message and (optionally) a state write. */
+  /**
+   * Build an ADK Event carrying a progress message and (optionally) a state write.
+   *
+   * `detail` is structured, log-only metadata about an external tool call (Tavily /
+   * ClickHouse / Prometheux — see `toolEvent` in `lib/log.ts`). Unlike `stateDelta` it
+   * is NOT written to session state; the runner forwards it on the event so it streams
+   * to the dashboard Activity panel and is persisted with the event.
+   */
   protected event(
     ctx: InvocationContext,
     message: string,
     kind: StepKind,
     stateDelta?: Record<string, unknown>,
+    detail?: Record<string, unknown>,
   ): Event {
     const params: Record<string, unknown> = {
       invocationId: ctx.invocationId,
@@ -29,7 +37,7 @@ export abstract class PipelineStep extends BaseAgent {
       branch: ctx.branch,
       content: { role: "model", parts: [{ text: message }] },
       actions: createEventActions(stateDelta ? { stateDelta } : {}),
-      customMetadata: { kind, step: this.name },
+      customMetadata: { kind, step: this.name, ...(detail ? { detail } : {}) },
     };
     return createEvent(params as Parameters<typeof createEvent>[0]);
   }
@@ -46,9 +54,17 @@ export abstract class PipelineStep extends BaseAgent {
   }
 }
 
-/** Read the {kind, step} we stash on each event's customMetadata. */
-export function eventMeta(ev: Event): { kind?: StepKind; step?: string } {
-  return ((ev as { customMetadata?: { kind?: StepKind; step?: string } }).customMetadata) ?? {};
+/** Read the {kind, step, detail} we stash on each event's customMetadata. */
+export function eventMeta(ev: Event): {
+  kind?: StepKind;
+  step?: string;
+  detail?: Record<string, unknown>;
+} {
+  return (
+    (ev as {
+      customMetadata?: { kind?: StepKind; step?: string; detail?: Record<string, unknown> };
+    }).customMetadata
+  ) ?? {};
 }
 
 /** Extract the human-readable text from an event's content. */

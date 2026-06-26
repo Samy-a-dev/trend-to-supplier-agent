@@ -33,7 +33,7 @@ async function safe(p: Promise<unknown>): Promise<void> {
 }
 
 /** Drop the large rawSignals payload and cap size for streaming/persistence. */
-function compactDelta(delta?: Record<string, unknown>): unknown {
+function compactDelta(delta?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!delta || Object.keys(delta).length === 0) return undefined;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(delta)) {
@@ -42,17 +42,34 @@ function compactDelta(delta?: Record<string, unknown>): unknown {
   return out;
 }
 
+/**
+ * Combine a step's state-delta data with its log-only tool `detail` into the single
+ * `data` blob streamed to the UI and persisted to `run_events`. The detail is nested
+ * under `tool` so it never collides with state keys (`opportunity`, `scores`, …) the
+ * dashboard reads from `data`.
+ */
+function mergeData(
+  stateData: Record<string, unknown> | undefined,
+  detail: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!stateData && !detail) return undefined;
+  return { ...(stateData ?? {}), ...(detail ? { tool: detail } : {}) };
+}
+
 function persistEvent(re: RunEvent): Promise<void> {
   const data = JSON.stringify(re.data ?? {}).slice(0, 100_000);
-  return insertRows("run_events", [
-    { run_id: re.runId, step: re.step, kind: re.kind, message: re.message, data },
-  ]);
+  return insertRows(
+    "run_events",
+    [{ run_id: re.runId, step: re.step, kind: re.kind, message: re.message, data }],
+    { waitForAsyncInsert: false },
+  );
 }
 
 export async function* runPipeline(input: {
   runId: string;
   vertical: string;
   region: string;
+  fresh?: boolean;
 }): AsyncGenerator<RunEvent> {
   const { runId, vertical, region } = input;
   const startedAt = nowIso();
@@ -63,7 +80,12 @@ export async function* runPipeline(input: {
     appName: APP,
     userId: OPERATOR,
     sessionId: runId,
-    state: { [STATE.vertical]: vertical, [STATE.region]: region, [STATE.runId]: runId },
+    state: {
+      [STATE.vertical]: vertical,
+      [STATE.region]: region,
+      [STATE.runId]: runId,
+      [STATE.freshScrape]: input.fresh ?? false,
+    },
   });
 
   await safe(upsertRun({ runId, vertical, region, status: "running", startedAt }));
@@ -85,9 +107,9 @@ export async function* runPipeline(input: {
       newMessage: { role: "user", parts: [{ text: vertical }] },
     })) {
       if (ev.author === "user") continue;
-      const { kind } = eventMeta(ev);
+      const { kind, detail } = eventMeta(ev);
       const message = eventText(ev);
-      const data = compactDelta(ev.actions?.stateDelta);
+      const data = mergeData(compactDelta(ev.actions?.stateDelta), detail);
       if (!message && data === undefined) continue;
       if (kind === "step_error") failed = message;
       const re: RunEvent = {

@@ -3,6 +3,7 @@ import type { Event, InvocationContext } from "@google/adk";
 import { PipelineStep } from "../base-step";
 import { generateJSON, MODELS } from "../../adapters/gemini";
 import { recordReviewInsights, recordPainPoints, recordCompetitors } from "../../db/store";
+import { toolEvent } from "../../log";
 import { STATE, type Opportunity, type RawSignals } from "../../types";
 
 const OppSchema = z.object({
@@ -91,11 +92,31 @@ export class ExtractStep extends PipelineStep {
 
     opp.painPoints = (opp.painPoints ?? []).map((p) => ({ ...p, severity: clamp01(p.severity) }));
 
-    await Promise.allSettled([
+    // allSettled keeps a persistence blip from aborting this critical step. Report only
+    // the rows that actually landed — a rejected insert contributes 0, never a false claim.
+    const inserts = await Promise.allSettled([
       recordReviewInsights(runId, opp.reviewInsights ?? []),
       recordPainPoints(runId, opp.painPoints ?? []),
       recordCompetitors(runId, opp.competitors ?? []),
     ]);
+    const ri = inserts[0].status === "fulfilled" ? opp.reviewInsights?.length ?? 0 : 0;
+    const pp = inserts[1].status === "fulfilled" ? opp.painPoints?.length ?? 0 : 0;
+    const cp = inserts[2].status === "fulfilled" ? opp.competitors?.length ?? 0 : 0;
+    const failed = inserts.filter((r) => r.status === "rejected").length;
+
+    yield this.event(
+      ctx,
+      `ClickHouse ← review_insights=${ri}, customer_pain_points=${pp}, competitor_products=${cp}` +
+        (failed ? ` (${failed} insert(s) failed)` : ""),
+      failed ? "warning" : "progress",
+      undefined,
+      toolEvent("clickhouse", "INSERT → review_insights, customer_pain_points, competitor_products", {
+        review_insights: ri,
+        customer_pain_points: pp,
+        competitor_products: cp,
+        failed,
+      }),
+    );
 
     yield this.event(
       ctx,

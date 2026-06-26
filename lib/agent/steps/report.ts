@@ -1,6 +1,7 @@
 import type { Event, InvocationContext } from "@google/adk";
 import { PipelineStep } from "../base-step";
 import { upsertOpportunity } from "../../db/store";
+import { toolEvent } from "../../log";
 import {
   STATE,
   type Evidence,
@@ -31,6 +32,17 @@ export class ReportStep extends PipelineStep {
     yield this.event(ctx, "Assembling sourcing report…", "step_start");
 
     await upsertOpportunity(runId, opp, scores, variant, "sourced");
+    yield this.event(
+      ctx,
+      `ClickHouse ← 1 row → product_opportunities (ReplacingMergeTree, status=sourced)`,
+      "progress",
+      undefined,
+      toolEvent("clickhouse", "UPSERT → product_opportunities", {
+        table: "product_opportunities",
+        rows: 1,
+        status: "sourced",
+      }),
+    );
 
     const summary = {
       product: opp.title,

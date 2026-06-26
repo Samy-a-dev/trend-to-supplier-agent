@@ -160,3 +160,15 @@ CREATE TABLE IF NOT EXISTS run_events (
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (run_id, ts);
+
+CREATE TABLE IF NOT EXISTS scrape_cache (
+  cache_key   String,
+  slug        LowCardinality(String),
+  vertical    String DEFAULT '',
+  source      LowCardinality(String) DEFAULT '',
+  items       String DEFAULT '[]',
+  item_count  Int64 DEFAULT 0,
+  captured_at DateTime64(3, 'UTC') DEFAULT now64(3)
+)
+ENGINE = ReplacingMergeTree(captured_at)
+ORDER BY (slug, vertical, source, cache_key);

@@ -23,6 +23,8 @@ function opt(name: string, fallback = ""): string {
 
 export const env = {
   apifyToken: () => req("APIFY_TOKEN"),
+  apifyTokenBackup: () => opt("APIFY_TOKEN_BACKUP"),
+  apifyTokenBackup2: () => opt("APIFY_TOKEN_BACKUP2"),
   tavilyApiKey: () => req("TAVILY_API_KEY"),
   clickhouse: () => ({
     url: req("CLICKHOUSE_URL"),

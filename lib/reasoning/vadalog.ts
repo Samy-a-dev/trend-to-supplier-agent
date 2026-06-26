@@ -22,35 +22,53 @@ export type ScoringFacts = {
   suppliers: Supplier[];
 };
 
-/** Returns the full program and the @output predicate to fetch. */
-export function buildScoringProgram(facts: ScoringFacts): { program: string; output: string } {
+export type ScoringProgram = {
+  /** Full Vadalog program text sent to Prometheux: facts + rules + @output. */
+  program: string;
+  /** The @output predicate whose rows the sidecar should fetch. */
+  output: string;
+  /** Ground facts derived from this run's signals (for logging / transparency). */
+  factLines: string[];
+  /** The static derivation rules being evaluated (for logging / transparency). */
+  ruleLines: string[];
+};
+
+/** Returns the full program, the @output predicate, and the fact/rule split. */
+export function buildScoringProgram(facts: ScoringFacts): ScoringProgram {
   const p = slug(facts.product);
-  const lines: string[] = [];
+  const factLines: string[] = [];
 
   // facts
-  lines.push(`trend(${lit(p)}, ${facts.growth.toFixed(3)}, ${Math.max(1, facts.platformCount)}).`);
+  factLines.push(`trend(${lit(p)}, ${facts.growth.toFixed(3)}, ${Math.max(1, facts.platformCount)}).`);
   for (const pain of facts.pains) {
-    lines.push(`painPoint(${lit(p)}, ${lit(pain.pain)}, ${pain.severity.toFixed(3)}).`);
+    factLines.push(`painPoint(${lit(p)}, ${lit(pain.pain)}, ${pain.severity.toFixed(3)}).`);
   }
   for (const c of facts.competitors) {
-    lines.push(`competitorPain(${lit(p)}, ${lit(c.weakness)}).`);
+    factLines.push(`competitorPain(${lit(p)}, ${lit(c.weakness)}).`);
+  }
+  // Vadalog negation (`not competitorPain(...)` below) only fires over a *grounded*
+  // predicate. With zero competitors `competitorPain` would be undefined, so
+  // differentiationOpportunity — and thus stockCandidate — would derive nothing even
+  // for a strong opportunity. Ground it with a sentinel that can't match a real pain.
+  if (facts.competitors.length === 0) {
+    factLines.push(`competitorPain(${lit(p)}, "__no_competitor__").`);
   }
   facts.suppliers.forEach((s, i) => {
     const rel = typeof s.fitScore === "number" && s.fitScore > 0 ? Math.min(5, s.fitScore) : 4.0;
-    lines.push(`supplier(${lit("s" + i)}, ${rel.toFixed(2)}, 14).`);
+    factLines.push(`supplier(${lit("s" + i)}, ${rel.toFixed(2)}, 14).`);
   });
 
   // rules
-  lines.push(`risingTrend(T) :- trend(T, G, Pl), G > 0.6, Pl >= 2.`);
-  lines.push(`strongPainPoint(T, Pa) :- painPoint(T, Pa, S), S >= 0.6.`);
-  lines.push(`differentiationOpportunity(T, Pa) :- strongPainPoint(T, Pa), not competitorPain(T, Pa).`);
-  lines.push(`supplierFit(S) :- supplier(S, Rel, Lead), Rel >= 4.0, Lead =< 21.`);
-  lines.push(
+  const ruleLines: string[] = [
+    `risingTrend(T) :- trend(T, G, Pl), G > 0.6, Pl >= 2.`,
+    `strongPainPoint(T, Pa) :- painPoint(T, Pa, S), S >= 0.6.`,
+    `differentiationOpportunity(T, Pa) :- strongPainPoint(T, Pa), not competitorPain(T, Pa).`,
+    `supplierFit(S) :- supplier(S, Rel, Lead), Rel >= 4.0, Lead <= 21.`,
     `stockCandidate(T) :- risingTrend(T), differentiationOpportunity(T, _), supplierFit(_).`,
-  );
-  lines.push(`@output("stockCandidate").`);
+  ];
 
-  return { program: lines.join("\n"), output: "stockCandidate" };
+  const program = [...factLines, ...ruleLines, `@output("stockCandidate").`].join("\n");
+  return { program, output: "stockCandidate", factLines, ruleLines };
 }
 
 /**

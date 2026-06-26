@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { Event, InvocationContext } from "@google/adk";
 import { PipelineStep } from "../base-step";
-import { searchSuppliers } from "../../adapters/tavily";
+import { searchSuppliers, SUPPLIER_DOMAINS } from "../../adapters/tavily";
 import { generateJSON, MODELS } from "../../adapters/gemini";
 import { recordSuppliers } from "../../db/store";
+import { toolEvent } from "../../log";
 import { STATE, type Opportunity, type Supplier } from "../../types";
 
 const SuppliersSchema = z.object({
@@ -31,27 +32,52 @@ export class SuppliersStep extends PipelineStep {
     const opp = this.read<Opportunity>(ctx, STATE.opportunity);
     if (!opp) throw new Error("suppliers: no opportunity in state");
 
-    yield this.event(ctx, `Searching suppliers for "${opp.title}"…`, "step_start");
-
     const queries = [
       `${opp.title} private label manufacturer OEM`,
       `${opp.title} wholesale supplier custom`,
     ];
+    yield this.event(
+      ctx,
+      `Tavily · discovering suppliers across ${SUPPLIER_DOMAINS.length} wholesale marketplaces`,
+      "step_start",
+      undefined,
+      toolEvent("tavily", `search:suppliers ×${queries.length}`, {
+        queries,
+        searchDepth: "advanced",
+        includeDomains: SUPPLIER_DOMAINS,
+        maxResults: 8,
+      }),
+    );
 
     const hits: { title: string; url: string; content: string }[] = [];
     for (const q of queries) {
       try {
         const res = await searchSuppliers(q, 8);
+        const found = res.results?.length ?? 0;
         for (const r of res.results ?? []) {
           hits.push({ title: r.title ?? "", url: r.url ?? "", content: (r.content ?? "").slice(0, 300) });
         }
+        yield this.event(
+          ctx,
+          `Tavily ← "${q}": ${found} marketplace hit(s)`,
+          "progress",
+          undefined,
+          toolEvent("tavily", "result", { q, hits: found }),
+        );
       } catch (e) {
-        yield this.event(ctx, `Supplier search failed for "${q}": ${String(e)}`, "warning");
+        yield this.event(ctx, `Tavily supplier search failed for "${q}": ${String(e)}`, "warning");
       }
     }
 
     let suppliers: Supplier[] = [];
     if (hits.length > 0) {
+      yield this.event(
+        ctx,
+        `Gemini · shortlisting suppliers from ${hits.length} marketplace result(s)`,
+        "progress",
+        undefined,
+        toolEvent("gemini", "extract:suppliers", { model: MODELS.extract, inputHits: hits.length }),
+      );
       const out = await generateJSON<z.infer<typeof SuppliersSchema>>({
         model: MODELS.extract,
         schema: SuppliersSchema,
@@ -64,7 +90,19 @@ export class SuppliersStep extends PipelineStep {
       suppliers = out.suppliers ?? [];
     }
 
-    if (suppliers.length > 0) await recordSuppliers(runId, suppliers);
+    if (suppliers.length > 0) {
+      await recordSuppliers(runId, suppliers);
+      yield this.event(
+        ctx,
+        `ClickHouse ← ${suppliers.length} row(s) → supplier_candidates`,
+        "progress",
+        undefined,
+        toolEvent("clickhouse", "INSERT → supplier_candidates", {
+          table: "supplier_candidates",
+          rows: suppliers.length,
+        }),
+      );
+    }
 
     yield this.event(ctx, `Shortlisted ${suppliers.length} supplier(s)`, "step_done", {
       [STATE.suppliers]: suppliers,

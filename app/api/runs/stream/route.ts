@@ -9,10 +9,12 @@ export async function POST(req: Request) {
     vertical?: string;
     region?: string;
     runId?: string;
+    fresh?: boolean;
   };
   const vertical = (body.vertical ?? "").trim();
   const region = (body.region ?? "US").trim();
   const runId = (body.runId ?? "").trim() || `run_${Date.now()}`;
+  const fresh = body.fresh === true;
   if (!vertical) return new Response("vertical is required", { status: 400 });
 
   const encoder = new TextEncoder();
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       try {
         send({ kind: "info", step: "run", message: "starting", runId });
-        for await (const ev of runPipeline({ runId, vertical, region })) {
+        for await (const ev of runPipeline({ runId, vertical, region, fresh })) {
           send(ev);
         }
       } catch (e) {

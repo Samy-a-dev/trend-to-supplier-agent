@@ -44,17 +44,40 @@ def health() -> dict:
     return {"ok": True, "jarvispy_url": JARVISPY_URL, "compute": COMPUTE}
 
 
+def _log(msg: str) -> None:
+    """Structured stdout line so the sidecar terminal shows real Prometheux usage."""
+    print(f"[PROMETHEUX] {msg}", flush=True)
+
+
+def _count_rows(results) -> object:
+    """Best-effort row count from the backend's opaque results blob (logging only)."""
+    try:
+        facts = results.get("facts") if isinstance(results, dict) else None
+        return len(facts) if isinstance(facts, list) else "?"
+    except Exception:
+        return "?"
+
+
 @app.post("/derive")
 def derive(req: DeriveRequest) -> dict:
+    program_lines = req.program.splitlines()
+    _log(
+        f"/derive output={req.output_predicate!r} "
+        f"lines={len(program_lines)} bytes={len(req.program)} compute={COMPUTE or 'auto'}"
+    )
+    # Echo the full Vadalog program (facts + rules) so the symbolic reasoning is visible.
+    _log("Vadalog program ↓\n" + req.program)
     try:
         compute_kwargs = {"compute": COMPUTE} if COMPUTE else {}
         project_id = px.save_project(project_name="sidecar_run")
+        _log(f"save_project → project_id={project_id}")
         # Clear any stale concepts left by a previous run in this project.
         try:
             px.cleanup_concepts(project_id)
         except Exception:
             pass
         px.save_concept(project_id=project_id, definition=req.program, **compute_kwargs)
+        _log(f"run_concept({req.output_predicate!r}) → evaluating rules on Vadalog engine…")
         px.run_concept(
             project_id=project_id,
             concept_name=req.output_predicate,
@@ -66,8 +89,10 @@ def derive(req: DeriveRequest) -> dict:
             output_predicate=req.output_predicate,
             page_size=req.page_size,
         )
+        _log(f"fetch_results({req.output_predicate!r}) → derivedRows={_count_rows(results)}")
         # `results` is the backend's opaque JSON `data` — returned as-is; the Node
         # side normalizes once the real shape is confirmed by the smoke test.
         return {"project_id": project_id, "results": results}
     except Exception as e:  # SDK raises plain Exception on non-success / 401 / 404
+        _log(f"derive FAILED: {e}")
         raise HTTPException(status_code=502, detail=str(e))
