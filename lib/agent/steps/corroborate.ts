@@ -35,10 +35,13 @@ export class CorroborateStep extends PipelineStep {
     );
 
     const evidence: Evidence = { answer: "", sources: [] };
+    const settled = await Promise.allSettled(queries.map((q) => searchDemand(q, 5)));
 
-    for (const q of queries) {
-      try {
-        const res = await searchDemand(q, 5);
+    for (let i = 0; i < queries.length; i++) {
+      const q = queries[i];
+      const result = settled[i];
+      if (result.status === "fulfilled") {
+        const res = result.value;
         const found = res.results?.length ?? 0;
         const answerChars = res.answer?.length ?? 0;
         if (res.answer && !evidence.answer) evidence.answer = res.answer;
@@ -56,8 +59,8 @@ export class CorroborateStep extends PipelineStep {
           undefined,
           toolEvent("tavily", "result", { q, sources: found, answerChars }),
         );
-      } catch (e) {
-        yield this.event(ctx, `Tavily search failed for "${q}": ${String(e)}`, "warning");
+      } else {
+        yield this.event(ctx, `Tavily search failed for "${q}": ${String(result.reason)}`, "warning");
       }
     }
 

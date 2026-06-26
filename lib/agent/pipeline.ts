@@ -1,5 +1,5 @@
 /** Assembles the 9-step sourcing pipeline as an ADK SequentialAgent. */
-import { SequentialAgent } from "@google/adk";
+import { ParallelAgent, SequentialAgent } from "@google/adk";
 import { DiscoverStep } from "./steps/discover";
 import { IngestStep } from "./steps/ingest";
 import { ExtractStep } from "./steps/extract";
@@ -19,8 +19,11 @@ export function buildPipeline(): SequentialAgent {
       new DiscoverStep(),
       new IngestStep(),
       new ExtractStep(),
-      new CorroborateStep(),
-      new SuppliersStep(),
+      new ParallelAgent({
+        name: "validate_and_source",
+        description: "Corroborate demand and discover suppliers concurrently",
+        subAgents: [new CorroborateStep(), new SuppliersStep()],
+      }),
       new ScoreStep(),
       new VariantStep(),
       new DraftStep(),

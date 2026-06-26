@@ -20,6 +20,8 @@ export class IngestStep extends PipelineStep {
 
   protected async *runAsyncImpl(ctx: InvocationContext): AsyncGenerator<Event, void, void> {
     const runId = this.read<string>(ctx, STATE.runId) ?? "";
+    const vertical = this.read<string>(ctx, STATE.vertical) ?? "";
+    const fresh = this.read<boolean>(ctx, STATE.freshScrape) ?? false;
     const plan = this.read<DiscoveryPlan>(ctx, STATE.discoveryPlan);
     if (!plan) throw new Error("ingest: no discovery plan in state");
 
@@ -28,11 +30,12 @@ export class IngestStep extends PipelineStep {
     const amazonUrls = plan.amazonQueries.map(
       (q) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}`,
     );
+    const cacheCtx = { vertical, bypass: fresh };
 
     const [tiktok, amazon, reddit] = await Promise.allSettled([
-      scrapeTikTok(plan.tiktokHashtags.slice(0, 4), 20),
-      scrapeAmazonProducts(amazonUrls.slice(0, 2), 15),
-      scrapeReddit(plan.redditSearches.slice(0, 3), 30),
+      scrapeTikTok(plan.tiktokHashtags.slice(0, 4), 20, cacheCtx),
+      scrapeAmazonProducts(amazonUrls.slice(0, 2), 15, cacheCtx),
+      scrapeReddit(plan.redditSearches.slice(0, 3), 30, cacheCtx),
     ]);
 
     const signals: RawSignals = { tiktok: [], amazonProducts: [], amazonReviews: [], reddit: [] };

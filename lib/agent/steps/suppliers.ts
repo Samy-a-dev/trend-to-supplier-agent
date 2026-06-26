@@ -50,9 +50,13 @@ export class SuppliersStep extends PipelineStep {
     );
 
     const hits: { title: string; url: string; content: string }[] = [];
-    for (const q of queries) {
-      try {
-        const res = await searchSuppliers(q, 8);
+    const settled = await Promise.allSettled(queries.map((q) => searchSuppliers(q, 8)));
+
+    for (let i = 0; i < queries.length; i++) {
+      const q = queries[i];
+      const result = settled[i];
+      if (result.status === "fulfilled") {
+        const res = result.value;
         const found = res.results?.length ?? 0;
         for (const r of res.results ?? []) {
           hits.push({ title: r.title ?? "", url: r.url ?? "", content: (r.content ?? "").slice(0, 300) });
@@ -64,8 +68,12 @@ export class SuppliersStep extends PipelineStep {
           undefined,
           toolEvent("tavily", "result", { q, hits: found }),
         );
-      } catch (e) {
-        yield this.event(ctx, `Tavily supplier search failed for "${q}": ${String(e)}`, "warning");
+      } else {
+        yield this.event(
+          ctx,
+          `Tavily supplier search failed for "${q}": ${String(result.reason)}`,
+          "warning",
+        );
       }
     }
 
