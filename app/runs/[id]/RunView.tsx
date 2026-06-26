@@ -37,11 +37,13 @@ export default function RunView({
   autostart,
   vertical,
   region,
+  fresh,
 }: {
   runId: string;
   autostart: boolean;
   vertical: string;
   region: string;
+  fresh: boolean;
 }) {
   const [status, setStatus] = useState<Record<string, StepState>>({});
   const [log, setLog] = useState<LogLine[]>([]);
@@ -89,7 +91,7 @@ export default function RunView({
       const res = await fetch("/api/runs/stream", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ runId, vertical, region }),
+        body: JSON.stringify({ runId, vertical, region, fresh }),
       });
       const reader = res.body?.getReader();
       if (!reader) throw new Error("no stream");
@@ -119,7 +121,7 @@ export default function RunView({
     } finally {
       setRunning(false);
     }
-  }, [runId, vertical, region, apply]);
+  }, [runId, vertical, region, fresh, apply]);
 
   const loadDetail = useCallback(async () => {
     const res = await fetch(`/api/runs/${runId}`);

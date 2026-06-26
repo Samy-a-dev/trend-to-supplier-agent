@@ -9,6 +9,25 @@ function client() {
   return _client;
 }
 
+const SEARCH_TIMEOUT_MS = Number(process.env.TAVILY_SEARCH_TIMEOUT_MS) || 20_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${SEARCH_TIMEOUT_MS}ms`)),
+          SEARCH_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Wholesale / manufacturer marketplaces Tavily is restricted to for supplier discovery. */
 export const SUPPLIER_DOMAINS = [
   "alibaba.com",
@@ -27,14 +46,16 @@ const responseMs = (res: unknown): number | undefined => {
 /** Recency-biased open-web read to validate demand / trend context. */
 export async function searchDemand(query: string, maxResults = 10) {
   const t0 = Date.now();
-  const res = await client().search(query, {
-    searchDepth: "advanced",
-    topic: "news",
-    days: 30,
-    maxResults,
-    includeAnswer: "advanced",
-    includeRawContent: "markdown",
-  });
+  const res = await withTimeout(
+    client().search(query, {
+      searchDepth: "advanced",
+      topic: "news",
+      days: 30,
+      maxResults,
+      includeAnswer: "advanced",
+    }),
+    `Tavily demand search "${query}"`,
+  );
   toolLog("tavily", "search:demand", {
     q: query,
     searchDepth: "advanced",
@@ -52,12 +73,14 @@ export async function searchDemand(query: string, maxResults = 10) {
 /** Supplier/manufacturer discovery, biased to wholesale marketplaces. */
 export async function searchSuppliers(query: string, maxResults = 10) {
   const t0 = Date.now();
-  const res = await client().search(query, {
-    searchDepth: "advanced",
-    maxResults,
-    includeDomains: SUPPLIER_DOMAINS,
-    includeRawContent: "markdown",
-  });
+  const res = await withTimeout(
+    client().search(query, {
+      searchDepth: "advanced",
+      maxResults,
+      includeDomains: SUPPLIER_DOMAINS,
+    }),
+    `Tavily supplier search "${query}"`,
+  );
   toolLog("tavily", "search:suppliers", {
     q: query,
     searchDepth: "advanced",

@@ -8,6 +8,7 @@ const EXAMPLES = ["home fitness", "desk setup", "pet accessories", "kitchen gadg
 export default function NewRunForm() {
   const [vertical, setVertical] = useState("");
   const [region, setRegion] = useState("US");
+  const [fresh, setFresh] = useState(false);
   const router = useRouter();
 
   const start = () => {
@@ -15,6 +16,7 @@ export default function NewRunForm() {
     if (!v) return;
     const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const qs = new URLSearchParams({ vertical: v, region, autostart: "1" });
+    if (fresh) qs.set("fresh", "1");
     router.push(`/runs/${runId}?${qs.toString()}`);
   };
 
@@ -42,6 +44,15 @@ export default function NewRunForm() {
           Run agent
         </button>
       </div>
+      <label className="mt-3 flex items-center gap-2 text-xs text-neutral-400">
+        <input
+          type="checkbox"
+          checked={fresh}
+          onChange={(e) => setFresh(e.target.checked)}
+          className="h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-950"
+        />
+        Fresh scrape
+      </label>
       <div className="mt-3 flex flex-wrap gap-2">
         {EXAMPLES.map((ex) => (
           <button

@@ -17,6 +17,7 @@ export default async function RunPage({
       autostart={sp.autostart === "1"}
       vertical={sp.vertical ?? ""}
       region={sp.region ?? "US"}
+      fresh={sp.fresh === "1"}
     />
   );
 }
